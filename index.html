@@ -1,0 +1,294 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#173b32">
+<title>Rent Growth Calculator</title>
+<link rel="manifest" href="manifest.json">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f3f6f4;color:#17221d;font:16px system-ui}
+header{background:#173b32;color:white;padding:25px 18px;border-radius:0 0 22px 22px}
+header h2{margin:0 0 5px}
+header p{margin:0;color:#d4e4dc;font-size:13px}
+main{max-width:760px;margin:auto;padding:15px}
+.card{background:white;border:1px solid #e0e8e3;border-radius:16px;padding:16px;margin-bottom:14px}
+h3{font-size:17px;margin:0 0 15px}
+.control{margin-bottom:20px}
+.line{display:flex;justify-content:space-between;align-items:center;gap:8px}
+label{font-weight:650;font-size:14px}
+.value{font-size:18px;font-weight:750;color:#246b54}
+input[type=range]{width:100%;accent-color:#246b54}
+.limits{display:flex;justify-content:space-between;color:#66736c;font-size:11px}
+.metrics{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.metric{background:#f1f6f3;padding:13px;border-radius:12px}
+.metric small{color:#66736c;font-size:12px}
+.metric strong{display:block;font-size:20px;color:#173b32;margin-top:5px;overflow-wrap:anywhere}
+.note{font-size:12px;color:#66736c;line-height:1.5}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:10px 6px;border-bottom:1px solid #e0e8e3;text-align:right}
+th:first-child,td:first-child{text-align:left}
+.tablewrap{overflow:auto;max-height:390px}
+button{padding:11px 14px;border:0;border-radius:10px;background:#173b32;color:white;font-weight:650}
+.secondary{background:#eaf1ed;color:#173b32}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.scenario{display:flex;justify-content:space-between;gap:8px;padding:10px 0;border-bottom:1px solid #e0e8e3}
+.scenario small{display:block;color:#66736c}
+footer{text-align:center;color:#66736c;font-size:11px;padding:15px}
+@media(min-width:600px){.metrics{grid-template-columns:repeat(4,1fr)}}
+</style>
+</head>
+<body>
+<header>
+<h2>Rent Growth Calculator</h2>
+<p>Calculate and compare rent-increase agreements</p>
+</header>
+<main>
+<section class="card">
+<h3>Calculation Settings</h3>
+
+<div class="control">
+<div class="line"><label>Initial monthly rent</label><b class="value" id="iv"></b></div>
+<input id="initial" type="range" min="1000" max="100000" step="500" value="10000">
+<div class="limits"><span>₹1,000</span><span>₹1,00,000</span></div>
+</div>
+
+<div class="control">
+<div class="line"><label>Rent increase</label><b class="value" id="rv"></b></div>
+<input id="rate" type="range" min="1" max="50" value="20">
+<div class="limits"><span>1%</span><span>50%</span></div>
+</div>
+
+<div class="control">
+<div class="line"><label>Increase interval</label><b class="value" id="tv"></b></div>
+<input id="interval" type="range" min="1" max="10" value="4">
+<div class="limits"><span>1 year</span><span>10 years</span></div>
+</div>
+
+<div class="control">
+<div class="line"><label>Calculation period</label><b class="value" id="pv"></b></div>
+<input id="period" type="range" min="1" max="30" value="10">
+<div class="limits"><span>1 year</span><span>30 years</span></div>
+</div>
+</section>
+
+<section class="card">
+<h3>Calculated Results</h3>
+<div class="metrics">
+<div class="metric"><small>Effective annual growth</small><strong id="eagr"></strong></div>
+<div class="metric"><small>Monthly rent in following year</small><strong id="future"></strong></div>
+<div class="metric"><small>Monthly rent after selected period</small><strong id="after"></strong></div>
+<div class="metric"><small>Total rent collected</small><strong id="total"></strong></div>
+</div>
+<p class="note" id="revision"></p>
+</section>
+
+<section class="card">
+<div class="line">
+<h3>Year-wise Rent Growth</h3>
+<button class="secondary" id="csv">Export CSV</button>
+</div>
+<div class="tablewrap">
+<table>
+<thead><tr><th>Year</th><th>Monthly Rent</th><th>Growth</th></tr></thead>
+<tbody id="rows"></tbody>
+</table>
+</div>
+</section>
+
+<section class="card">
+<h3>Compare 12 Common Scenarios</h3>
+<p class="note">Ranked by monthly rent at the beginning of the year following your selected period.</p>
+<div id="compare"></div>
+</section>
+
+<section class="card">
+<h3>Save Your Calculations</h3>
+<div class="actions">
+<button id="save">Save Scenario</button>
+<button class="secondary" id="reset">Reset</button>
+</div>
+<div id="saved"></div>
+<p class="note">Saved scenarios are stored in this browser on this device.</p>
+</section>
+<footer>Assumes continuous occupancy, 12 months of rent per year, and compound increases.</footer>
+</main>
+
+<script>
+const $=id=>document.getElementById(id);
+const fmt=n=>"₹"+Math.round(n).toLocaleString("en-IN");
+
+function rentForYear(initial,rate,interval,year){
+ return initial*Math.pow(1+rate/100,Math.floor((year-1)/interval));
+}
+function totalRent(initial,rate,interval,period){
+ let total=0;
+ for(let y=1;y<=period;y++){
+  total+=rentForYear(initial,rate,interval,y)*12;
+ }
+ return total;
+}
+
+const presets=[
+ ["6% every year",6,1],
+ ["10% every year",10,1],
+ ["12% every 2 years",12,2],
+ ["15% every 2 years",15,2],
+ ["20% every 2 years",20,2],
+ ["15% every 3 years",15,3],
+ ["20% every 3 years",20,3],
+ ["30% every 3 years",30,3],
+ ["20% every 4 years",20,4],
+ ["25% every 4 years",25,4],
+ ["25% every 5 years",25,5],
+ ["30% every 5 years",30,5]
+];
+
+function calculate(){
+ const initial=+$("initial").value;
+ const rate=+$("rate").value;
+ const interval=+$("interval").value;
+ const period=+$("period").value;
+
+ $("iv").textContent=fmt(initial);
+ $("rv").textContent=rate+"%";
+ $("tv").textContent="Every "+interval+" year(s)";
+ $("pv").textContent=period+" years";
+
+ const annual=(Math.pow(1+rate/100,1/interval)-1)*100;
+ const future=rentForYear(initial,rate,interval,period+1);
+ const end=rentForYear(initial,rate,interval,period);
+
+ $("eagr").textContent=annual.toFixed(2)+"%";
+ $("future").textContent=fmt(future);
+ $("after").textContent=fmt(end);
+ $("total").textContent=fmt(totalRent(initial,rate,interval,period));
+ $("revision").textContent=
+ Math.floor(period/interval)+" increase(s) take effect during the selected period. A revision after completing an interval applies from the following year.";
+
+ const body=$("rows");
+ body.innerHTML="";
+ for(let y=1;y<=period+1;y++){
+  const rent=rentForYear(initial,rate,interval,y);
+  const tr=document.createElement("tr");
+  tr.innerHTML="<td>Year "+y+"</td><td>"+fmt(rent)+"</td><td>"+
+   ((rent/initial-1)*100).toFixed(1)+"%</td>";
+  body.appendChild(tr);
+ }
+
+ const ranked=presets.map(([name,r,t])=>({
+  name,
+  annual:(Math.pow(1+r/100,1/t)-1)*100,
+  rent:rentForYear(initial,r,t,period+1)
+ })).sort((a,b)=>b.rent-a.rent);
+
+ const box=$("compare");
+ box.innerHTML="";
+ ranked.forEach((x,i)=>{
+  const div=document.createElement("div");
+  div.className="scenario";
+  const left=document.createElement("div");
+  left.innerHTML="<b>"+(i+1)+". "+x.name+"</b><small>Annual growth: "+x.annual.toFixed(2)+"%</small>";
+  const right=document.createElement("b");
+  right.textContent=fmt(x.rent);
+  div.append(left,right);
+  box.appendChild(div);
+ });
+}
+
+function getSaved(){
+ try{return JSON.parse(localStorage.getItem("rentSaved")||"[]")}
+ catch(e){return []}
+}
+function showSaved(){
+ const box=$("saved");
+ box.innerHTML="";
+ getSaved().forEach((s,i)=>{
+  const div=document.createElement("div");
+  div.className="scenario";
+  const left=document.createElement("div");
+  left.innerHTML="<b>"+s.name+"</b><small>"+fmt(s.initial)+" · "+s.rate+
+   "% every "+s.interval+" year(s) · "+s.period+" years</small>";
+  const btn=document.createElement("button");
+  btn.className="secondary";
+  btn.textContent="Load";
+  btn.onclick=()=>{
+   $("initial").value=s.initial;
+   $("rate").value=s.rate;
+   $("interval").value=s.interval;
+   $("period").value=s.period;
+   calculate();
+   window.scrollTo(0,0);
+  };
+  const del=document.createElement("button");
+  del.className="secondary";
+  del.textContent="Delete";
+  del.onclick=()=>{
+   const a=getSaved();a.splice(i,1);
+   localStorage.setItem("rentSaved",JSON.stringify(a));
+   showSaved();
+  };
+  const actions=document.createElement("span");
+  actions.className="actions";
+  actions.append(btn,del);
+  div.append(left,actions);
+  box.appendChild(div);
+ });
+ if(!getSaved().length)box.textContent="No saved scenarios yet.";
+}
+
+["initial","rate","interval","period"].forEach(id=>{
+ $(id).addEventListener("input",calculate);
+});
+
+$("save").onclick=()=>{
+ const a=getSaved();
+ a.unshift({
+  name:"Scenario "+(a.length+1),
+  initial:+$("initial").value,
+  rate:+$("rate").value,
+  interval:+$("interval").value,
+  period:+$("period").value
+ });
+ localStorage.setItem("rentSaved",JSON.stringify(a.slice(0,30)));
+ showSaved();
+};
+
+$("reset").onclick=()=>{
+ $("initial").value=10000;
+ $("rate").value=20;
+ $("interval").value=4;
+ $("period").value=10;
+ calculate();
+};
+
+$("csv").onclick=()=>{
+ const data=[["Year","Monthly Rent","Growth"]];
+ const initial=+$("initial").value;
+ const rate=+$("rate").value;
+ const interval=+$("interval").value;
+ const period=+$("period").value;
+ for(let y=1;y<=period+1;y++){
+  const rent=rentForYear(initial,rate,interval,y);
+  data.push([y,Math.round(rent),((rent/initial-1)*100).toFixed(2)+"%"]);
+ }
+ const csv=data.map(r=>r.join(",")).join("\n");
+ const blob=new Blob([csv],{type:"text/csv"});
+ const a=document.createElement("a");
+ a.href=URL.createObjectURL(blob);
+ a.download="rent-growth.csv";
+ a.click();
+ URL.revokeObjectURL(a.href);
+};
+
+calculate();
+showSaved();
+
+if("serviceWorker" in navigator){
+ navigator.serviceWorker.register("./sw.js").catch(()=>{});
+}
+</script>
+</body>
+</html>
